@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #f8fafc; background: transparent; margin: 0; padding: 0; }
+        
+        .container { background: #0f172a; border-radius: 12px; padding: 18px; border: 1px solid #334155; }
+        audio { width: 100%; height: 45px; outline: none; margin-bottom: 12px; filter: invert(0.9) hue-rotate(180deg); }
+        
+        #subs { height: 450px; overflow-y: auto; padding-right: 8px; }
+        #subs::-webkit-scrollbar { width: 8px; }
+        #subs::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        #subs::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        #subs::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .row {
+            display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;
+            margin-bottom: 8px; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.02); border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .row:hover { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1); }
+        .row.active {
+            background: linear-gradient(90deg, rgba(37,99,235,0.2) 0%, rgba(37,99,235,0.05) 100%);
+            border-left: 4px solid #3b82f6; transform: translateX(4px);
+        }
+
+        .col-keep { display: flex; align-items: center; padding-top: 4px; }
+        .col-keep input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
+        
+        .col-time {
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            font-size: 13px; color: #64748b; min-width: 140px;
+            cursor: pointer; padding-top: 4px;
+        }
+        .col-time:hover { color: #3b82f6; }
+
+        .col-tag select {
+            background: #1e293b; color: #f8fafc; border: 1px solid #334155;
+            border-radius: 6px; padding: 4px; font-size: 12px;
+            outline: none; cursor: pointer;
+        }
+
+        .col-text textarea {
+            flex-grow: 1; background: transparent; color: #f8fafc;
+            border: 1px solid transparent; border-radius: 4px; padding: 4px 8px;
+            font-size: 15px; font-family: inherit; resize: none; overflow: hidden;
+            outline: none; transition: border-color 0.2s; line-height: 1.5;
+        }
+        .col-text textarea:hover { border-color: #334155; background: #1e293b; }
+        .col-text textarea:focus { border-color: #3b82f6; background: #1e293b; }
+        
+        .header { display: flex; font-size: 13px; color: #94a3b8; font-weight: 600; padding: 0 14px 10px 14px; margin-bottom: 8px; border-bottom: 1px solid #334155; gap: 12px; }
+        
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .sync-btn { background: #3b82f6; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .sync-btn:hover { background: #2563eb; }
+        .sync-btn.dirty { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+        .sync-btn.dirty:hover { background: #d97706; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+        <audio id="audio" controls></audio>
+        <div class="top-bar">
+            <span style="color: #cbd5e1; font-weight: 600; font-size: 14px;">▶️ 播放跟读与编辑区</span>
+            <button id="syncBtn" class="sync-btn" onclick="syncData()">✅ 保存修改并同步</button>
+        </div>
+        <div class="header">
+            <div style="width: 24px;">保留</div>
+            <div style="min-width: 140px;">时间码区间 (点击跳转)</div>
+            <div style="width: 100px;">叙事标签</div>
+            <div style="flex-grow: 1;">字幕内容 (直接打字编辑)</div>
+        </div>
+        <div id="subs"></div>
+    </div>
+    
+    <script>
+        let subsData = [];
+        let currentVersion = -1;
+        let isDirty = false;
+        const audioNode = document.getElementById("audio");
+        const subsNode = document.getElementById("subs");
+        const syncBtn = document.getElementById("syncBtn");
+
+        const tagOptions = ["", "#金句", "#核心观点", "#废话冗余", "#需B-Roll", "#引言", "#争议点"];
+
+        function sendMessage(type, data) {
+            window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+        }
+
+        function markDirty() {
+            isDirty = true;
+            syncBtn.classList.add("dirty");
+            syncBtn.innerText = "⚠️ 检测到修改 - 点击同步";
+        }
+
+        function syncData() {
+            sendMessage("setComponentValue", { value: subsData, dataType: "json" });
+            isDirty = false;
+            syncBtn.classList.remove("dirty");
+            syncBtn.innerText = "✅ 已同步";
+            setTimeout(() => {
+                if(!isDirty) {
+                    syncBtn.innerText = "✅ 保存修改并同步";
+                }
+            }, 2000);
+        }
+
+        function autoResizeTextarea(el) {
+            el.style.height = 'auto';
+            el.style.height = (el.scrollHeight) + 'px';
+        }
+
+        function formatTime(s) {
+            let m = Math.floor(s / 60);
+            let sec = Math.floor(s % 60);
+            return (m < 10 ? '0'+m : m) + ':' + (sec < 10 ? '0'+sec : sec);
+        }
+
+        function buildUI() {
+            subsNode.innerHTML = "";
+            subsData.forEach((row, i) => {
+                let div = document.createElement("div");
+                div.className = "row";
+                div.id = "row-" + i;
+                
+                // Keep checkbox
+                let colKeep = document.createElement("div");
+                colKeep.className = "col-keep";
+                let keep = document.createElement("input");
+                keep.type = "checkbox";
+                keep.checked = row["保留"];
+                keep.onchange = e => { row["保留"] = e.target.checked; markDirty(); };
+                colKeep.appendChild(keep);
+
+                // Time code
+                let colTime = document.createElement("div");
+                colTime.className = "col-time";
+                colTime.innerText = `[${formatTime(row["开始(s)"])} - ${formatTime(row["结束(s)"])}]`;
+                colTime.title = "点击播放此句";
+                colTime.onclick = () => { audioNode.currentTime = row["开始(s)"]; audioNode.play(); };
+
+                // Tag select
+                let colTag = document.createElement("div");
+                colTag.className = "col-tag";
+                let tag = document.createElement("select");
+                tagOptions.forEach(opt => {
+                    let o = document.createElement("option");
+                    o.value = opt;
+                    o.text = opt || "无标签";
+                    if(row["标签"] === opt) o.selected = true;
+                    tag.appendChild(o);
+                });
+                tag.onchange = e => { row["标签"] = e.target.value; markDirty(); };
+                colTag.appendChild(tag);
+
+                // Text input
+                let colText = document.createElement("div");
+                colText.className = "col-text";
+                let text = document.createElement("textarea");
+                text.value = row["台词内容"] || "";
+                text.rows = 1;
+                text.oninput = e => { 
+                    row["台词内容"] = e.target.value; 
+                    autoResizeTextarea(e.target);
+                    markDirty();
+                };
+                text.onblur = () => {
+                    if (isDirty) syncData();
+                }
+                
+                colText.appendChild(text);
+
+                div.appendChild(colKeep);
+                div.appendChild(colTime);
+                div.appendChild(colTag);
+                div.appendChild(colText);
+                subsNode.appendChild(div);
+
+                // Initial resize
+                setTimeout(() => autoResizeTextarea(text), 0);
+            });
+        }
+
+        audioNode.ontimeupdate = () => {
+            let cur = audioNode.currentTime;
+            subsData.forEach((row, i) => {
+                let node = document.getElementById("row-" + i);
+                if (!node) return;
+                if (cur >= row["开始(s)"] && cur <= row["结束(s)"]) {
+                    if (!node.classList.contains("active")) {
+                        document.querySelectorAll(".row").forEach(n => n.classList.remove("active"));
+                        node.classList.add("active");
+                        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            });
+        };
+
+        window.addEventListener("message", e => {
+            if (e.data.type === "streamlit:render") {
+                let args = e.data.args;
+                if (args.version !== currentVersion) {
+                    currentVersion = args.version;
+                    subsData = JSON.parse(JSON.stringify(args.data));
+                    if (audioNode.src !== args.audio_src) {
+                        let isPlaying = !audioNode.paused;
+                        let ct = audioNode.currentTime;
+                        audioNode.src = args.audio_src;
+                        audioNode.currentTime = ct;
+                        if (isPlaying) audioNode.play();
+                    }
+                    buildUI();
+                    isDirty = false;
+                    syncBtn.classList.remove("dirty");
+                    syncBtn.innerText = "✅ 保存修改并同步";
+                }
+                sendMessage("setFrameHeight", { height: 600 });
+            }
+        });
+
+        window.onload = () => {
+            sendMessage("streamlit:componentReady", { apiVersion: 1 });
+        };
+    </script>
+  </body>
+</html>
