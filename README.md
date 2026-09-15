@@ -1,4 +1,4 @@
-### 🌟 CutPilot Pro 数字化场记与智能粗剪
+CutPilot Pro 数字化场记与智能粗剪
 
 CutPilot Pro 是一款面向剪辑师与内容创作者的 AI 数字化场记与粗剪工具。
 
@@ -11,7 +11,9 @@ CutPilot Pro 是一款面向剪辑师与内容创作者的 AI 数字化场记与
 #### 🍎 系统要求与安装说明
 - **支持系统**：macOS 11.0 (Big Sur) 及更高版本（原生适配 Apple Silicon M 系列芯片）。
 
-- 🌟 CutPilot Pro: Digital Logging & Smart Rough-Cut Assistant
+
+CutPilot Pro: Digital Logging & Smart Rough-Cut Assistant
+
 CutPilot Pro is an AI-powered assistant built for video editors and creators, streamlining digital script logging and rough-cut assembly.
 
 ✨ Key Features
