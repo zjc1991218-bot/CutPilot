@@ -39,7 +39,7 @@ def main():
     
     # 创建桌面窗口
     window = webview.create_window(
-        "CutPilot Pro v1.3 - AI 数字化场记与粗剪工作台", 
+        "CutPilot Pro v1.6 - AI 数字化场记与粗剪工作台", 
         f"http://localhost:{port}",
         width=1280,
         height=800,

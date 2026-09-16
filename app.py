@@ -20,6 +20,43 @@ import streamlit as st
 import streamlit.components.v1 as components
 from docx import Document
 
+class TqdmProgressCapture:
+    def __init__(self, progress_bar):
+        self.progress_bar = progress_bar
+        self.buf = ""
+        self.original_stderr = sys.stderr
+        self.max_pct = 0
+        # Matches patterns like "Downloading [model.safetensors]:  45%|"
+        self.pct_re = re.compile(r'\[(.*?)\]:\s*(\d+)%\|')
+
+    def write(self, x):
+        self.original_stderr.write(x)
+        self.buf += x
+        if '\r' in self.buf or '\n' in self.buf:
+            lines = self.buf.replace('\r', '\n').split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line: continue
+                match = self.pct_re.search(line)
+                if match:
+                    filename = match.group(1)
+                    pct = int(match.group(2))
+                    
+                    # Usually the model weight file takes the longest. 
+                    # We only track progress of large files like .safetensors, .bin, .pt
+                    if any(ext in filename for ext in ['.safetensors', '.bin', '.pt', 'model']):
+                        if pct > self.max_pct:
+                            self.max_pct = pct
+                            try:
+                                self.progress_bar.progress(self.max_pct / 100.0, text=f"{self.max_pct}%")
+                            except Exception:
+                                pass
+            self.buf = ""
+
+    def flush(self):
+        self.original_stderr.flush()
+
+
 # ----------------- 专属 Logo 图标探测 -----------------
 LOGO_CANDIDATES = [
     os.path.join(os.path.dirname(__file__), "assets", "logo.png"),
@@ -44,7 +81,7 @@ LOGO_B64 = get_logo_base64()
 
 # ----------------- 页面基础配置 -----------------
 st.set_page_config(
-    page_title="CutPilot AI v1.4 - 数字化场记与粗剪", 
+    page_title="CutPilot AI v1.6 - 数字化场记与粗剪", 
     layout="wide", 
     page_icon=APP_LOGO_IMAGE,
     initial_sidebar_state="expanded"
@@ -329,7 +366,7 @@ with st.sidebar:
     st.markdown(f"""
         <div style="text-align: center; padding: 10px 0 16px 0;">
             {logo_html}
-            <h2 style="margin:0; font-weight:800; font-size:1.4rem;">CutPilot <span style="color:#3b82f6;">Pro</span> <span style="font-size:0.85rem; background:rgba(59,130,246,0.2); color:#60a5fa; padding:2px 7px; border-radius:6px; font-weight:600; margin-left:4px;">v1.4</span></h2>
+            <h2 style="margin:0; font-weight:800; font-size:1.4rem;">CutPilot <span style="color:#3b82f6;">Pro</span> <span style="font-size:0.85rem; background:rgba(59,130,246,0.2); color:#60a5fa; padding:2px 7px; border-radius:6px; font-weight:600; margin-left:4px;">v1.6</span></h2>
             <p style="font-size:0.82rem; margin-top:5px; opacity:0.8;">本地大模型 & 阿里百炼/火山引擎</p>
         </div>
         <hr style="opacity:0.15; margin:8px 0 16px 0;">
@@ -591,8 +628,15 @@ with st.sidebar:
                     if st.button(btn_text, key=f"btn_dl_{r_key}", use_container_width=True):
                         try:
                             active_node = fastest_node if chosen_mirror_key == "auto" else next((m for m in DOWNLOAD_MIRRORS if m["id"] == chosen_mirror_key), fastest_node)
-                            with st.spinner(f"正在从【{active_node['name']}】极速拉取 {r_info['title']}，请稍候..."):
+                            dl_progress_bar = st.progress(0.0, text="0%")
+                            capture = TqdmProgressCapture(dl_progress_bar)
+                            sys.stderr = capture
+                            try:
                                 execute_resource_download(r_key, chosen_mirror_key)
+                            finally:
+                                sys.stderr = capture.original_stderr
+                            
+                            dl_progress_bar.empty()
                             st.success(f"🎉 {r_info['title']} 下载完成并就绪！")
                             time.sleep(0.5)
                             st.rerun()
@@ -624,7 +668,7 @@ with st.sidebar:
         
         <div style="position: fixed; bottom: 12px; left: 18px; z-index: 9999; pointer-events: none; user-select: none;">
             <span style="font-size: 0.72rem; color: var(--text-subtitle); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 0.6px; opacity: 0.85;">
-                JChen_v1.4
+                JChen_v1.6
             </span>
         </div>
     """, unsafe_allow_html=True)
@@ -1189,7 +1233,7 @@ def load_local_model(model_id):
     except ImportError:
         pass
     except Exception as e:
-        st.warning(f"通过 qwen_asr 加载模型失败 ({e})，尝试使用 transformers 适配层...")
+        print(f"通过 qwen_asr 加载模型失败 ({e})，尝试使用 transformers 适配层...")
 
     # 方案 2: 使用 transformers AutoProcessor + AutoModel / AutoModelForCausalLM 适配
     try:
@@ -2256,7 +2300,7 @@ st.markdown(f"""
     <div class="brand-header" style="display: flex; align-items: center;">
         {main_logo_html}
         <div class="brand-text">
-            <h1 style="margin: 0;">CutPilot AI <span style="font-size: 1.1rem; font-weight: 600; color: #3b82f6; vertical-align: middle; margin-left: 8px;">v1.4</span></h1>
+            <h1 style="margin: 0;">CutPilot AI <span style="font-size: 1.1rem; font-weight: 600; color: #3b82f6; vertical-align: middle; margin-left: 8px;">v1.6</span></h1>
             <p style="margin: 4px 0 0 0;">本地大模型 & 阿里百炼 / 火山引擎 • 智能场记与粗剪工作流</p>
         </div>
     </div>
@@ -2335,6 +2379,16 @@ with st.container(border=True):
                         with st.spinner(f"正在通过火山引擎豆包语音大模型进行识别..."):
                             raw_segments = transcribe_volcengine(vc_key, vc_appid, vc_res, tmp_wav, total_dur)
                     else:
+                        if not is_sel_ready:
+                            dl_progress_bar = st.progress(0.0, text="0%")
+                            capture = TqdmProgressCapture(dl_progress_bar)
+                            sys.stderr = capture
+                            try:
+                                execute_resource_download(selected_res_key, "auto")
+                            finally:
+                                sys.stderr = capture.original_stderr
+                            dl_progress_bar.empty()
+
                         with st.spinner(f"正在调度 {current_model_id} 进行张量推理..."):
                             model = load_local_model(current_model_id)
                             raw_segments = run_base_transcribe(model, tmp_wav, total_dur)
